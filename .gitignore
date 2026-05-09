@@ -3,3 +3,11 @@ __pycache__/
 *.pyo
 *.avi
 *.mp4
+
+# Presentation / submission documents (not part of the code repo)
+AV_Dijkstra_Presentation.pptx
+AV_Presentation.html
+Presentation_Transcript.md
+Project_Summary.md
+make_pptx.py
+*.docx
