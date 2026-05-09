@@ -169,42 +169,6 @@ Robot radius and clearance inflate each obstacle boundary during path validation
 
 ---
 
-## Improvements & Fixes (v2)
-
-The following issues were identified and resolved:
-
-### Bugs Fixed
-| # | Issue | Fix |
-|---|-------|-----|
-| 1 | `dijkstra.py` ran `input()` calls at import time | Wrapped all logic in `if __name__ == "__main__":` |
-| 2 | `IsObstacle` return had redundant `not all(...)` clause masking intent | Simplified to a single flat `or` chain |
-| 3 | `root.update()` could re-trigger `_on_run` before it finished (re-entrancy) | Replaced with `root.update_idletasks()` |
-
-### Performance
-| # | Issue | Fix |
-|---|-------|-----|
-| 4 | `Dijkstra.__init__` pre-allocated 180 000 dict entries (3 dicts × 60 000 cells) on every instantiation | Replaced with `defaultdict` — allocation is now O(1) and memory grows only as nodes are visited |
-| 5 | `_is_valid` (called on every click) created a full `Dijkstra` instance, triggering the 180k allocation | Resolved by fix #4 — instance creation is now near-free |
-| 6 | Slider drag fired an obstacle redraw on every tick (O(60 000) canvas operations) | Added 150 ms debounce — redraws only after dragging stops |
-
-### Code Quality
-| # | Issue | Fix |
-|---|-------|-----|
-| 7 | `sqrt_cr = 1.4142 * c_r` used an imprecise magic number | Replaced with `math.sqrt(2)`; extracted as module-level `_SQRT2` constant |
-| 8 | Terrain zone boundaries duplicated between `utils.py` and `gui_config.py` — divergence risk | `gui_config.py` now imports `ROAD_ROWS`/`OFFROAD_ROWS` from `utils.py` and derives `TERRAIN_ZONES` automatically |
-| 9 | `gui_canvas.py` header referenced a non-existent "A* example" base class | Replaced with an accurate description |
-| 11 | Double-space alignment in `gui.py.__init__` (PEP 8) | Fixed |
-
-### UX
-| # | Issue | Fix |
-|---|-------|-----|
-| 10 | Animation speed slider was inverted (higher value = slower) | Inverted: higher slider value now means faster animation |
-| 12 | No validation for start == goal | Added guard in both GUI (`_on_run`) and CLI (`dijkstra.py`) |
-| 13 | No keyboard shortcuts | Added `Enter` → Run, `Escape` → Stop, `R` → Reset |
-| 14 | CLI `animate()` only showed the path live, not exploration | Added `cv2.imshow` + `waitKey(1)` inside the exploration loop |
-
----
-
 ## Key Terms
 
 Dijkstra's Algorithm · Graph-Based Navigation · Weighted Path Planning · Autonomous Vehicle · State-Space Exploration · Terrain Cost Map · Priority Queue · Min-Heap
