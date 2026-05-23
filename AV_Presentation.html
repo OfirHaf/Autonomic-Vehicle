@@ -1,0 +1,1593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dijkstra Path Planning — AV Project</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* =====================================================
+   MANDATORY BASE — Viewport Fit
+   ===================================================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; overflow: hidden; background: #020c18; }
+
+html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+
+.slide {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* =====================================================
+   DESIGN TOKENS — Neon Cyber × AV DNA
+   ===================================================== */
+:root {
+  --bg:         #020c18;
+  --bg2:        #05152a;
+  --bg3:        #0a1f3a;
+  --cyan:       #00e5ff;
+  --teal:       #06d6a0;
+  --magenta:    #ff3366;
+  --amber:      #ffd166;
+  --steel:      #457b9d;
+  --white:      #e8f4f8;
+  --muted:      #4a6b8a;
+  --card:       rgba(0,229,255,0.04);
+  --card-border: rgba(0,229,255,0.15);
+  --card-border-hot: rgba(0,229,255,0.4);
+
+  --title-size:  clamp(2rem, 5.5vw, 4.2rem);
+  --h2-size:     clamp(1.4rem, 3.2vw, 2.6rem);
+  --h3-size:     clamp(1rem, 2vw, 1.5rem);
+  --body-size:   clamp(0.75rem, 1.3vw, 1rem);
+  --small-size:  clamp(0.6rem, 0.9vw, 0.8rem);
+  --label-size:  clamp(0.55rem, 0.8vw, 0.72rem);
+
+  --slide-pad:   clamp(2rem, 5vw, 5rem);
+  --gap:         clamp(0.6rem, 1.5vw, 1.5rem);
+
+  --font-head:   'Space Grotesk', sans-serif;
+  --font-mono:   'Space Mono', monospace;
+
+  --glow-cyan:   0 0 20px rgba(0,229,255,0.4), 0 0 60px rgba(0,229,255,0.15);
+  --glow-teal:   0 0 20px rgba(6,214,160,0.4), 0 0 60px rgba(6,214,160,0.15);
+  --glow-mag:    0 0 20px rgba(255,51,102,0.4), 0 0 60px rgba(255,51,102,0.15);
+}
+
+/* =====================================================
+   GLOBAL TYPE
+   ===================================================== */
+body { font-family: var(--font-head); color: var(--white); }
+
+h1 { font-size: var(--title-size); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; }
+h2 { font-size: var(--h2-size); font-weight: 700; line-height: 1.1; letter-spacing: -0.01em; }
+h3 { font-size: var(--h3-size); font-weight: 600; }
+p, li { font-size: var(--body-size); line-height: 1.55; color: rgba(232,244,248,0.82); }
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--label-size);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+/* =====================================================
+   GRID BACKGROUND (shared)
+   ===================================================== */
+.grid-bg {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.04) 1px, transparent 1px);
+  background-size: clamp(24px,3vw,48px) clamp(24px,3vw,48px);
+}
+.grid-bg::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 70% 60% at 50% 50%, transparent 40%, var(--bg) 100%);
+}
+
+/* =====================================================
+   SHARED CARD
+   ===================================================== */
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: clamp(0.8rem,1.5vw,1.4rem);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.card:hover { border-color: var(--card-border-hot); box-shadow: var(--glow-cyan); }
+
+/* Accent bar top */
+.card.cyan-top  { border-top: 2px solid var(--cyan); }
+.card.teal-top  { border-top: 2px solid var(--teal); }
+.card.mag-top   { border-top: 2px solid var(--magenta); }
+.card.amber-top { border-top: 2px solid var(--amber); }
+
+/* =====================================================
+   SLIDE LAYOUT HELPERS
+   ===================================================== */
+.slide-inner {
+  position: relative; z-index: 1;
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  padding: var(--slide-pad);
+  gap: var(--gap);
+}
+.slide-header { display: flex; flex-direction: column; gap: 0.4em; flex-shrink: 0; }
+.slide-header .label { margin-bottom: 0.2em; }
+.slide-body { flex: 1; display: flex; gap: var(--gap); min-height: 0; }
+.col { display: flex; flex-direction: column; gap: var(--gap); flex: 1; min-width: 0; }
+.col-2 { flex: 2; }
+
+.divider {
+  width: 100%; height: 1px;
+  background: linear-gradient(90deg, var(--cyan), var(--teal), transparent);
+  flex-shrink: 0;
+}
+
+/* progress bar */
+#progress {
+  position: fixed; top: 0; left: 0; right: 0; height: 2px;
+  background: rgba(0,229,255,0.15); z-index: 100;
+}
+#progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan), var(--teal), var(--magenta));
+  width: 0%; transition: width 0.4s ease;
+  box-shadow: var(--glow-cyan);
+}
+
+/* slide counter */
+#slide-counter {
+  position: fixed; bottom: clamp(0.8rem,2vh,1.5rem); right: clamp(1rem,2.5vw,2rem);
+  font-family: var(--font-mono); font-size: var(--small-size);
+  color: var(--muted); z-index: 100; letter-spacing: 0.1em;
+}
+
+/* nav dots */
+#nav-dots {
+  position: fixed; right: clamp(0.6rem,1.5vw,1.2rem); top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; gap: 8px; z-index: 100;
+}
+.dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted); cursor: pointer; transition: all 0.3s;
+}
+.dot.active { background: var(--cyan); box-shadow: var(--glow-cyan); transform: scale(1.5); }
+
+/* =====================================================
+   REVEAL ANIMATIONS
+   ===================================================== */
+.reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.reveal.visible { opacity: 1; transform: none; }
+.reveal-left { opacity: 0; transform: translateX(-24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.reveal-left.visible { opacity: 1; transform: none; }
+.reveal-scale { opacity: 0; transform: scale(0.92); transition: opacity 0.5s ease, transform 0.5s ease; }
+.reveal-scale.visible { opacity: 1; transform: none; }
+
+/* stagger delays */
+.d1 { transition-delay: 0.05s; }
+.d2 { transition-delay: 0.15s; }
+.d3 { transition-delay: 0.25s; }
+.d4 { transition-delay: 0.35s; }
+.d5 { transition-delay: 0.45s; }
+.d6 { transition-delay: 0.55s; }
+
+/* =====================================================
+   SLIDE 1 — TITLE
+   ===================================================== */
+#s1 { background: var(--bg); }
+
+#s1 .grid-bg {
+  background-image:
+    linear-gradient(rgba(0,229,255,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+#particle-canvas {
+  position: absolute; inset: 0; z-index: 0; opacity: 0.6;
+}
+
+#s1 .slide-inner {
+  justify-content: center;
+  padding-left: clamp(3rem, 8vw, 9rem);
+}
+
+.s1-eyebrow {
+  display: flex; align-items: center; gap: 0.8em;
+  font-family: var(--font-mono); font-size: var(--small-size);
+  letter-spacing: 0.25em; text-transform: uppercase; color: var(--cyan);
+}
+.s1-eyebrow::before {
+  content: ''; width: 36px; height: 1px;
+  background: var(--cyan); box-shadow: var(--glow-cyan); flex-shrink: 0;
+}
+
+#s1 h1 {
+  max-width: 14ch;
+  background: linear-gradient(135deg, #fff 30%, var(--cyan) 70%, var(--teal) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.s1-tagline {
+  font-size: var(--h3-size); color: rgba(232,244,248,0.55); font-weight: 400;
+  max-width: 55ch;
+}
+
+.s1-meta {
+  display: flex; gap: 2em; margin-top: 1em;
+  font-family: var(--font-mono); font-size: var(--small-size); color: var(--muted);
+}
+.s1-meta span { display: flex; align-items: center; gap: 0.5em; }
+.s1-meta span::before { content: '—'; color: var(--cyan); }
+
+/* animated path on title */
+#title-path-svg {
+  position: absolute; right: 0; top: 0;
+  width: 50%; height: 100%; z-index: 1; opacity: 0.7;
+}
+
+/* =====================================================
+   SLIDE 2 — PROBLEM
+   ===================================================== */
+#s2 { background: var(--bg); }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); flex: 1; min-height: 0; }
+
+.bullet-list { list-style: none; display: flex; flex-direction: column; gap: 0.55em; }
+.bullet-list li {
+  display: flex; align-items: flex-start; gap: 0.7em;
+  font-size: var(--body-size); color: rgba(232,244,248,0.82);
+  line-height: 1.45;
+}
+.bullet-list li::before {
+  content: '▸'; color: var(--cyan); font-size: 0.8em;
+  margin-top: 0.2em; flex-shrink: 0;
+}
+
+.obstacle-svg-wrap {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  position: relative; min-height: 0;
+}
+
+/* =====================================================
+   SLIDE 3 — ALGORITHM
+   ===================================================== */
+#s3 { background: var(--bg); }
+
+.algo-steps {
+  display: flex; flex-direction: column; gap: 0.45em;
+  flex: 1; min-height: 0;
+}
+.algo-step {
+  display: flex; align-items: center; gap: 1em;
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 6px; padding: 0.6em 1em;
+  transition: all 0.3s;
+}
+.algo-step:hover { border-color: var(--cyan); box-shadow: var(--glow-cyan); }
+.step-num {
+  font-family: var(--font-mono); font-size: var(--h3-size); font-weight: 700;
+  color: var(--cyan); flex-shrink: 0; width: 1.8em; text-align: center;
+  text-shadow: var(--glow-cyan);
+}
+.step-text { font-size: var(--body-size); color: rgba(232,244,248,0.85); }
+.step-text strong { color: var(--white); }
+
+.formula-box {
+  background: rgba(0,229,255,0.06); border: 1px solid rgba(0,229,255,0.2);
+  border-radius: 6px; padding: 0.7em 1.2em;
+  font-family: var(--font-mono); font-size: var(--body-size);
+  color: var(--amber); letter-spacing: 0.02em;
+}
+
+/* =====================================================
+   SLIDE 4 — TERRAIN
+   ===================================================== */
+#s4 { background: var(--bg); }
+
+.terrain-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--gap);
+  flex: 1; min-height: 0;
+}
+.terrain-card {
+  display: flex; flex-direction: column; gap: 0.6em;
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: clamp(1rem,2vw,1.8rem);
+  position: relative; overflow: hidden;
+}
+.terrain-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 3px; border-radius: 8px 8px 0 0;
+}
+.terrain-card.road::before   { background: var(--teal); box-shadow: var(--glow-teal); }
+.terrain-card.open::before   { background: var(--steel); }
+.terrain-card.offroad::before { background: var(--magenta); box-shadow: var(--glow-mag); }
+
+.terrain-mult {
+  font-family: var(--font-mono); font-size: clamp(2rem,4vw,3.5rem);
+  font-weight: 700; line-height: 1;
+}
+.road .terrain-mult   { color: var(--teal); text-shadow: var(--glow-teal); }
+.open .terrain-mult   { color: var(--steel); }
+.offroad .terrain-mult { color: var(--magenta); text-shadow: var(--glow-mag); }
+
+.terrain-band {
+  height: 8px; border-radius: 4px; margin: 0.3em 0;
+}
+.road .terrain-band   { background: var(--teal); box-shadow: var(--glow-teal); }
+.open .terrain-band   { background: var(--steel); }
+.offroad .terrain-band { background: var(--magenta); box-shadow: var(--glow-mag); }
+
+.terrain-rows { font-family: var(--font-mono); font-size: var(--small-size); color: var(--muted); }
+
+.insight-bar {
+  background: rgba(255,209,102,0.08); border: 1px solid rgba(255,209,102,0.2);
+  border-radius: 6px; padding: 0.6em 1em; flex-shrink: 0;
+  font-size: var(--body-size); color: var(--amber);
+}
+.insight-bar strong { color: var(--white); }
+
+/* =====================================================
+   SLIDE 5 — OBSTACLES
+   ===================================================== */
+#s5 { background: var(--bg); }
+
+.obs-rows {
+  display: flex; flex-direction: column; gap: 0.4em; flex: 1; min-height: 0;
+}
+.obs-row {
+  display: grid; grid-template-columns: 1.6fr 2.8fr 3fr; gap: 0.6em;
+  align-items: center; flex-shrink: 0;
+}
+.obs-name {
+  background: rgba(255,51,102,0.12); border: 1px solid rgba(255,51,102,0.25);
+  border-radius: 5px; padding: 0.45em 0.8em; text-align: center;
+  font-weight: 700; font-size: var(--body-size); color: var(--magenta);
+}
+.obs-desc { font-size: var(--small-size); color: rgba(232,244,248,0.75); }
+.obs-method {
+  font-family: var(--font-mono); font-size: calc(var(--small-size) * 0.95);
+  color: var(--steel);
+}
+
+/* =====================================================
+   SLIDE 6 — ARCHITECTURE
+   ===================================================== */
+#s6 { background: var(--bg); }
+
+.arch-list { display: flex; flex-direction: column; gap: 0.5em; flex: 1; min-height: 0; }
+.arch-item {
+  display: grid; grid-template-columns: 9em 1fr; gap: 0.8em; align-items: center;
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 6px; padding: 0.6em 1em; transition: all 0.3s;
+}
+.arch-item:hover { border-color: var(--card-border-hot); box-shadow: var(--glow-cyan); }
+.arch-file {
+  font-family: var(--font-mono); font-size: var(--small-size); font-weight: 700;
+  padding: 0.3em 0.6em; border-radius: 4px; text-align: center; white-space: nowrap;
+}
+.arch-file.a1 { background: rgba(6,214,160,0.15); color: var(--teal); }
+.arch-file.a2 { background: rgba(255,209,102,0.15); color: var(--amber); }
+.arch-file.a3 { background: rgba(69,123,157,0.2); color: #7fc8e8; }
+.arch-file.a4 { background: rgba(232,244,248,0.08); color: var(--white); }
+.arch-file.a5 { background: rgba(255,51,102,0.15); color: var(--magenta); }
+.arch-desc { font-size: var(--body-size); color: rgba(232,244,248,0.8); line-height: 1.4; }
+
+/* =====================================================
+   SLIDE 7 — GUI SCREENSHOTS
+   ===================================================== */
+#s7 { background: var(--bg2); }
+
+.screenshots-wrap {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap);
+  flex: 1; min-height: 0; align-items: start;
+}
+.screenshot-card {
+  display: flex; flex-direction: column; gap: 0.5em;
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 10px; padding: 0.6em; overflow: hidden;
+  transition: all 0.3s;
+}
+.screenshot-card:hover { border-color: var(--card-border-hot); box-shadow: var(--glow-cyan); }
+.screenshot-card img {
+  width: 100%; border-radius: 6px;
+  max-height: min(44vh, 340px); object-fit: cover; object-position: top;
+}
+.screenshot-caption {
+  font-size: var(--small-size); color: var(--muted); text-align: center; padding: 0.2em;
+}
+
+.controls-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4em; flex-shrink: 0;
+}
+.ctrl-chip {
+  background: rgba(0,229,255,0.07); border: 1px solid rgba(0,229,255,0.15);
+  border-radius: 5px; padding: 0.35em 0.6em; text-align: center;
+}
+.ctrl-key {
+  font-family: var(--font-mono); font-size: var(--small-size); color: var(--cyan);
+  display: block; font-weight: 700;
+}
+.ctrl-desc { font-size: calc(var(--small-size) * 0.9); color: var(--muted); display: block; }
+
+/* =====================================================
+   SLIDE 8 — LIVE ANIMATION
+   ===================================================== */
+#s8 { background: var(--bg); }
+
+#dijkstra-grid-wrap {
+  flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0;
+}
+
+#dijkstra-canvas {
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  box-shadow: var(--glow-cyan);
+  max-width: min(90%, 700px);
+  max-height: min(80%, 400px);
+  width: auto; height: auto;
+}
+
+.anim-legend {
+  display: flex; gap: 1.5em; justify-content: center; flex-shrink: 0;
+}
+.legend-item { display: flex; align-items: center; gap: 0.5em; font-size: var(--small-size); }
+.legend-dot { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
+/* =====================================================
+   SLIDE 9 — RESULTS
+   ===================================================== */
+#s9 { background: var(--bg); }
+
+.metrics-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap);
+  flex-shrink: 0;
+}
+.metric-card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: clamp(0.8rem,1.5vw,1.4rem);
+  display: flex; flex-direction: column; gap: 0.3em;
+  text-align: center; transition: all 0.3s; position: relative; overflow: hidden;
+}
+.metric-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.metric-card.c1::before { background: var(--teal); box-shadow: var(--glow-teal); }
+.metric-card.c2::before { background: var(--amber); }
+.metric-card.c3::before { background: var(--steel); }
+.metric-card.c4::before { background: var(--magenta); box-shadow: var(--glow-mag); }
+.metric-card:hover { border-color: var(--card-border-hot); box-shadow: var(--glow-cyan); }
+.metric-val {
+  font-family: var(--font-mono); font-size: clamp(1.6rem,3.5vw,2.8rem);
+  font-weight: 700; line-height: 1;
+}
+.c1 .metric-val { color: var(--teal); text-shadow: var(--glow-teal); }
+.c2 .metric-val { color: var(--amber); }
+.c3 .metric-val { color: #7fc8e8; }
+.c4 .metric-val { color: var(--magenta); text-shadow: var(--glow-mag); }
+.metric-label { font-size: var(--small-size); color: var(--muted); }
+.metric-unit  { font-size: calc(var(--small-size)*0.9); color: rgba(74,107,138,0.7); }
+
+.observations {
+  flex: 1; min-height: 0;
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: clamp(0.8rem,1.5vw,1.4rem);
+  display: flex; flex-direction: column; gap: 0.5em;
+}
+.obs-item {
+  display: flex; align-items: flex-start; gap: 0.7em;
+  font-size: var(--body-size); color: rgba(232,244,248,0.82); line-height: 1.4;
+}
+.obs-icon { color: var(--teal); flex-shrink: 0; font-size: 1em; }
+
+/* =====================================================
+   SLIDE 10 — COMPARISON
+   ===================================================== */
+#s10 { background: var(--bg); }
+
+.compare-table {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0;
+  border: 1px solid var(--card-border); border-radius: 8px; overflow: hidden;
+}
+.compare-header, .compare-row {
+  display: grid; grid-template-columns: 2fr 3fr 3fr;
+}
+.compare-header {
+  background: rgba(0,229,255,0.08); border-bottom: 1px solid var(--card-border);
+}
+.compare-row { border-bottom: 1px solid rgba(0,229,255,0.06); }
+.compare-row:last-child { border-bottom: none; }
+.compare-row:nth-child(even) { background: rgba(0,229,255,0.02); }
+.compare-cell {
+  padding: 0.6em 1em; font-size: var(--body-size);
+  border-right: 1px solid rgba(0,229,255,0.06);
+}
+.compare-cell:last-child { border-right: none; }
+.compare-header .compare-cell { font-weight: 700; color: var(--white); }
+.compare-cell.property { color: var(--amber); font-weight: 600; }
+.compare-cell.dijkstra-col { color: var(--teal); }
+
+.badge {
+  display: inline-block; padding: 0.1em 0.5em; border-radius: 4px;
+  font-family: var(--font-mono); font-size: calc(var(--small-size)*0.9);
+  font-weight: 700; margin-left: 0.4em; vertical-align: middle;
+}
+.badge-teal { background: rgba(6,214,160,0.2); color: var(--teal); }
+.badge-steel { background: rgba(69,123,157,0.2); color: #7fc8e8; }
+
+/* =====================================================
+   SLIDE 11 — CONCLUSIONS
+   ===================================================== */
+#s11 { background: var(--bg); }
+
+/* =====================================================
+   SLIDE 12 — THANK YOU
+   ===================================================== */
+#s12 { background: var(--bg); overflow: hidden; }
+
+#s12 h1 {
+  font-size: clamp(3rem, 8vw, 7rem);
+  background: linear-gradient(135deg, #fff 20%, var(--cyan) 55%, var(--teal) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; line-height: 1;
+}
+.link-card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 0.8em 1.2em;
+  display: flex; align-items: center; gap: 0.8em;
+  font-size: var(--body-size); color: rgba(232,244,248,0.7);
+  transition: all 0.3s;
+}
+.link-card:hover { border-color: var(--cyan); color: var(--white); box-shadow: var(--glow-cyan); }
+.link-label { font-family: var(--font-mono); font-size: var(--small-size); color: var(--cyan); }
+
+/* =====================================================
+   RESPONSIVE SHORT-HEIGHT
+   ===================================================== */
+@media (max-height: 700px) {
+  :root {
+    --slide-pad: clamp(1rem,3vw,2.5rem);
+    --gap: clamp(0.4rem,1vw,0.8rem);
+    --title-size: clamp(1.5rem,4.5vw,2.8rem);
+    --h2-size: clamp(1.1rem,2.5vw,1.8rem);
+    --h3-size: clamp(0.85rem,1.6vw,1.2rem);
+    --body-size: clamp(0.65rem,1.1vw,0.85rem);
+  }
+}
+@media (max-height: 580px) {
+  :root {
+    --slide-pad: clamp(0.6rem,2vw,1.5rem);
+    --gap: clamp(0.3rem,0.7vw,0.5rem);
+    --title-size: clamp(1.2rem,4vw,2rem);
+    --h2-size: clamp(0.95rem,2vw,1.4rem);
+    --body-size: clamp(0.6rem,1vw,0.75rem);
+  }
+  .metrics-grid { grid-template-columns: repeat(2,1fr); }
+  .terrain-grid { grid-template-columns: 1fr 1fr; }
+  #nav-dots, .s1-meta { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.2s !important;
+  }
+  html { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div id="progress"><div id="progress-fill"></div></div>
+
+<!-- Slide counter -->
+<div id="slide-counter">01 / 12</div>
+
+<!-- Nav dots -->
+<nav id="nav-dots" aria-label="Slide navigation">
+  <div class="dot active" data-slide="0" title="Title"></div>
+  <div class="dot" data-slide="1" title="Problem"></div>
+  <div class="dot" data-slide="2" title="Algorithm"></div>
+  <div class="dot" data-slide="3" title="Terrain"></div>
+  <div class="dot" data-slide="4" title="Obstacles"></div>
+  <div class="dot" data-slide="5" title="Architecture"></div>
+  <div class="dot" data-slide="6" title="GUI"></div>
+  <div class="dot" data-slide="7" title="Animation"></div>
+  <div class="dot" data-slide="8" title="Results"></div>
+  <div class="dot" data-slide="9" title="Conclusions"></div>
+  <div class="dot" data-slide="10" title="End"></div>
+</nav>
+
+<main>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 1 — TITLE
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s1" aria-label="Title slide">
+  <div class="grid-bg"></div>
+  <canvas id="particle-canvas" aria-hidden="true"></canvas>
+
+  <!-- Animated SVG path on the right -->
+  <svg id="title-path-svg" viewBox="0 0 500 600" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <!-- Grid dots -->
+    <defs>
+      <pattern id="dotgrid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+        <circle cx="20" cy="20" r="1.5" fill="rgba(0,229,255,0.15)"/>
+      </pattern>
+      <filter id="glow-filter">
+        <feGaussianBlur stdDeviation="3" result="blur"/>
+        <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+      </filter>
+    </defs>
+    <rect width="500" height="600" fill="url(#dotgrid)"/>
+
+    <!-- Obstacle shapes (stylised) -->
+    <circle cx="280" cy="180" r="48" fill="none" stroke="rgba(255,51,102,0.4)" stroke-width="1.5"/>
+    <circle cx="280" cy="180" r="48" fill="rgba(255,51,102,0.06)"/>
+    <ellipse cx="200" cy="330" rx="45" ry="28" fill="none" stroke="rgba(255,51,102,0.35)" stroke-width="1.5"/>
+    <polygon points="370,80 410,140 340,140" fill="rgba(255,51,102,0.08)" stroke="rgba(255,51,102,0.35)" stroke-width="1.5"/>
+    <rect x="340" y="300" width="70" height="50" rx="4" fill="rgba(255,51,102,0.06)" stroke="rgba(255,51,102,0.3)" stroke-width="1.5"/>
+    <rect x="130" y="440" width="100" height="30" rx="4" transform="rotate(-20,180,455)" fill="rgba(255,51,102,0.06)" stroke="rgba(255,51,102,0.3)" stroke-width="1.5"/>
+
+    <!-- Explored region glow -->
+    <path d="M60,540 Q80,480 120,440 Q160,390 200,360 Q240,320 260,280 Q270,240 268,200"
+          fill="none" stroke="rgba(69,123,157,0.25)" stroke-width="32"
+          stroke-linecap="round" filter="url(#glow-filter)"/>
+
+    <!-- Optimal path -->
+    <path id="anim-path" d="M60,540 Q80,480 120,440 Q160,390 200,360 Q240,320 260,280 Q270,240 268,200"
+          fill="none" stroke="url(#path-grad)" stroke-width="2.5"
+          stroke-linecap="round" stroke-dasharray="600" stroke-dashoffset="600"/>
+
+    <!-- Start / goal -->
+    <circle cx="60" cy="540" r="10" fill="var(--teal)" filter="url(#glow-filter)"/>
+    <circle cx="60" cy="540" r="10" fill="var(--teal)" opacity="0.5">
+      <animate attributeName="r" values="10;20;10" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="268" cy="200" r="10" fill="var(--amber)" filter="url(#glow-filter)"/>
+
+    <defs>
+      <linearGradient id="path-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="var(--teal)"/>
+        <stop offset="100%" stop-color="var(--cyan)"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div class="slide-inner" style="justify-content:center;">
+    <div class="s1-eyebrow reveal d1">ENPM 661 · Robot Motion Planning</div>
+    <h1 class="reveal d2">Path Planning<br>for Autonomous<br>Vehicles</h1>
+    <p class="s1-tagline reveal d3">
+      Dijkstra's weighted-graph search navigating a 300×200 grid<br>with terrain costs, 7 obstacles, and real-time GUI visualization.
+    </p>
+    <div class="s1-meta reveal d4">
+      <span>Dijkstra's Algorithm</span>
+      <span>Weighted Terrain</span>
+      <span>8-Connected Grid</span>
+      <span>Interactive GUI</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 2 — PROBLEM
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s2" aria-label="Problem statement">
+  <div class="grid-bg"></div>
+  <div class="slide-inner">
+    <div class="slide-header">
+      <span class="label reveal d1">01 — Problem Statement</span>
+      <h2 class="reveal d2">Navigate. Avoid. Optimise.</h2>
+      <div class="divider reveal d3"></div>
+    </div>
+    <div class="two-col slide-body">
+      <div class="col reveal-left d2">
+        <div class="card cyan-top">
+          <h3 style="color:var(--cyan);margin-bottom:0.5em;">The Challenge</h3>
+          <ul class="bullet-list">
+            <li>Navigate a 300 × 200 grid from any start to any goal</li>
+            <li>Avoid 7 analytic obstacles: circle, ellipse, triangles, rhombus, rod</li>
+            <li>Respect robot radius + safety clearance (configurable)</li>
+            <li>Prefer paved roads — terrain cost is part of the problem</li>
+            <li>Find the <strong style="color:var(--white)">globally optimal weighted path</strong></li>
+          </ul>
+        </div>
+        <div class="card mag-top">
+          <h3 style="color:var(--magenta);margin-bottom:0.5em;">Why AV-Specific?</h3>
+          <ul class="bullet-list">
+            <li>Real vehicles don't treat all drivable space equally</li>
+            <li>Road bandwidth: smooth, predictable, cheap</li>
+            <li>Open space: uncertain surface, moderate cost</li>
+            <li>Sidewalks &amp; rough terrain: dangerous, expensive</li>
+            <li>Planner must balance <strong style="color:var(--white)">geometry AND cost</strong></li>
+          </ul>
+        </div>
+      </div>
+      <div class="col reveal d4">
+        <!-- Animated obstacle map preview -->
+        <div class="obstacle-svg-wrap">
+          <svg viewBox="0 0 300 200" style="width:100%;max-height:min(50vh,360px);border-radius:8px;border:1px solid var(--card-border);" aria-label="Obstacle map">
+            <!-- Terrain zones -->
+            <rect x="0" y="0" width="300" height="200" fill="#0a1628"/>
+            <!-- Road bands (green) -->
+            <rect x="0" y="130" width="300" height="20" fill="rgba(6,214,160,0.15)" rx="0"/>
+            <rect x="0" y="90" width="300" height="20" fill="rgba(6,214,160,0.15)" rx="0"/>
+            <rect x="0" y="50" width="300" height="20" fill="rgba(6,214,160,0.15)" rx="0"/>
+            <!-- Off-road bands (blue) -->
+            <rect x="0" y="0" width="300" height="20" fill="rgba(69,123,157,0.15)" rx="0"/>
+            <rect x="0" y="60" width="300" height="20" fill="rgba(69,123,157,0.15)"/>
+            <rect x="0" y="120" width="300" height="20" fill="rgba(69,123,157,0.15)"/>
+            <rect x="0" y="180" width="300" height="20" fill="rgba(69,123,157,0.15)"/>
+            <!-- Obstacles -->
+            <circle cx="225" cy="50" r="25" fill="rgba(255,51,102,0.7)" stroke="rgba(255,51,102,0.9)" stroke-width="1"/>
+            <ellipse cx="150" cy="100" rx="40" ry="20" fill="rgba(255,51,102,0.7)" stroke="rgba(255,51,102,0.9)" stroke-width="1"/>
+            <polygon points="20,80 37,50 55,75" fill="rgba(255,51,102,0.7)" stroke="rgba(255,51,102,0.9)" stroke-width="1"/>
+            <polygon points="20,180 5,160 35,155" fill="rgba(255,51,102,0.7)" stroke="rgba(255,51,102,0.9)" stroke-width="1" transform="scale(1.2) translate(-5,0)"/>
+            <!-- Start / goal markers -->
+            <circle cx="15" cy="170" r="6" fill="var(--teal)"/>
+            <circle cx="270" cy="30" r="6" fill="var(--amber)"/>
+            <!-- Animated path -->
+            <path d="M15,170 Q40,155 60,130 Q90,110 120,100 Q155,90 180,70 Q220,50 260,35 Q265,32 270,30"
+                  fill="none" stroke="var(--teal)" stroke-width="2" stroke-dasharray="4 3" opacity="0.8">
+              <animate attributeName="stroke-dashoffset" from="0" to="-14" dur="0.6s" repeatCount="indefinite"/>
+            </path>
+            <!-- Legend -->
+            <rect x="2" y="185" width="8" height="8" rx="1" fill="rgba(6,214,160,0.7)"/>
+            <text x="12" y="193" fill="rgba(232,244,248,0.6)" font-size="6" font-family="monospace">ROAD ×1.0</text>
+            <rect x="70" y="185" width="8" height="8" rx="1" fill="rgba(69,123,157,0.7)"/>
+            <text x="80" y="193" fill="rgba(232,244,248,0.6)" font-size="6" font-family="monospace">OFF-ROAD ×6.0</text>
+            <rect x="155" y="185" width="8" height="8" rx="1" fill="rgba(255,51,102,0.7)"/>
+            <text x="165" y="193" fill="rgba(232,244,248,0.6)" font-size="6" font-family="monospace">OBSTACLE</text>
+          </svg>
+        </div>
+        <div class="insight-bar reveal d5">
+          <strong>Key insight:</strong> The shortest geometric path ≠ the cheapest weighted path.
+          Dijkstra finds the true optimum in the weighted graph.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 3 — ALGORITHM
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s3" aria-label="Dijkstra algorithm">
+  <div class="grid-bg"></div>
+  <div class="slide-inner">
+    <div class="slide-header">
+      <span class="label reveal d1">02 — Algorithm Theory</span>
+      <h2 class="reveal d2">How Dijkstra Works</h2>
+      <div class="divider reveal d3"></div>
+    </div>
+    <div class="slide-body" style="gap:var(--gap);">
+      <div class="col col-2">
+        <div class="algo-steps">
+          <div class="algo-step reveal d2">
+            <span class="step-num">01</span>
+            <span class="step-text">Assign cost <strong>∞</strong> to every node. Set <strong>start cost = 0</strong>. Push start into the min-heap.</span>
+          </div>
+          <div class="algo-step reveal d3">
+            <span class="step-num">02</span>
+            <span class="step-text">Pop the node with the <strong>lowest cumulative cost</strong> from the heap (lazy-deletion for stale entries).</span>
+          </div>
+          <div class="algo-step reveal d4">
+            <span class="step-num">03</span>
+            <span class="step-text">If it's the <strong>goal</strong> → done. Dijkstra guarantees this is the optimal path. Backtrack via parent pointers.</span>
+          </div>
+          <div class="algo-step reveal d5">
+            <span class="step-num">04</span>
+            <span class="step-text">Examine all <strong>8 neighbours</strong> (4 straight + 4 diagonal). Compute edge weight = base × avg_terrain × step_size.</span>
+          </div>
+          <div class="algo-step reveal d6">
+            <span class="step-num">05</span>
+            <span class="step-text">If <strong>new_cost &lt; neighbour's best</strong>, update cost + parent, push to heap. Repeat from step 02.</span>
+          </div>
+        </div>
+        <div class="formula-box reveal d6">
+          weight = base_move × avg_terrain(from, to) × step_size<br>
+          <span style="color:var(--teal)">straight:</span> base = 1.0 &nbsp;|&nbsp;
+          <span style="color:var(--cyan)">diagonal:</span> base = √2
+        </div>
+      </div>
+      <div class="col reveal d3" style="min-width:0;">
+        <div class="card" style="flex:1;display:flex;flex-direction:column;gap:0.7em;">
+          <h3 style="color:var(--cyan);">Dijkstra Cost Function</h3>
+          <!-- Core Dijkstra formula -->
+          <div style="background:rgba(0,229,255,0.06);border:1px solid rgba(0,229,255,0.25);border-radius:6px;padding:0.8em 1em;text-align:center;">
+            <div style="font-family:var(--font-mono);font-size:clamp(1rem,2vw,1.4rem);font-weight:700;color:var(--white);letter-spacing:0.04em;">
+              f(n) &nbsp;=&nbsp; g(n)
+            </div>
+            <div style="font-family:var(--font-mono);font-size:var(--small-size);color:var(--muted);margin-top:0.4em;">
+              no heuristic term — pure cumulative cost
+            </div>
+          </div>
+          <div style="background:rgba(6,214,160,0.06);border:1px solid rgba(6,214,160,0.2);border-radius:6px;padding:0.7em 1em;">
+            <div style="font-family:var(--font-mono);font-size:clamp(0.75rem,1.4vw,1rem);color:var(--teal);line-height:1.8;">
+              g(n) &nbsp;= &nbsp;cost from <span style="color:var(--white)">start → n</span><br>
+              w(u,v) = base &nbsp;×&nbsp; terrain(u,v) &nbsp;×&nbsp; step<br>
+              relax: &nbsp;if g(u) + w(u,v) &lt; g(v) → update g(v)
+            </div>
+          </div>
+          <div style="margin-top:auto;background:rgba(6,214,160,0.07);border:1px solid rgba(6,214,160,0.2);border-radius:6px;padding:0.6em 0.9em;">
+            <p style="color:var(--teal);font-family:var(--font-mono);font-size:var(--small-size);">
+              GUARANTEE: When the goal is popped from the heap, g(goal) is the globally optimal weighted cost.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 4 — TERRAIN
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s4" aria-label="Terrain model">
+  <div class="grid-bg"></div>
+  <div class="slide-inner">
+    <div class="slide-header">
+      <span class="label reveal d1">03 — Terrain Cost Model</span>
+      <h2 class="reveal d2">Three Cost Zones</h2>
+      <div class="divider reveal d3"></div>
+    </div>
+    <div class="terrain-grid reveal d2">
+      <div class="terrain-card road">
+        <span class="label">Road</span>
+        <div class="terrain-mult">×1.0</div>
+        <div class="terrain-band"></div>
+        <p>Paved lanes — lowest cost. The AV actively seeks these rows even if it means a geometric detour.</p>
+        <div class="terrain-rows">Rows: 30–50 · 90–110 · 150–170</div>
+        <div style="margin-top:auto;font-size:var(--small-size);color:var(--teal);">▸ Preferred route</div>
+      </div>
+      <div class="terrain-card open">
+        <span class="label">Open Space</span>
+        <div class="terrain-mult">×2.5</div>
+        <div class="terrain-band"></div>
+        <p>Parking lots and plazas — moderate cost. Acceptable when road routing adds too much distance.</p>
+        <div class="terrain-rows">All rows not in road or off-road zones</div>
+        <div style="margin-top:auto;font-size:var(--small-size);color:var(--steel);">▸ Acceptable</div>
+      </div>
+      <div class="terrain-card offroad">
+        <span class="label">Off-Road</span>
+        <div class="terrain-mult">×6.0</div>
+        <div class="terrain-band"></div>
+        <p>Sidewalks and rough terrain — highest cost. The AV will take large detours to avoid these zones.</p>
+        <div class="terrain-rows">Rows: 1–20 · 60–80 · 120–140 · 180–200</div>
+        <div style="margin-top:auto;font-size:var(--small-size);color:var(--magenta);">▸ Avoid</div>
+      </div>
+    </div>
+    <div class="insight-bar reveal d4">
+      <strong>Single source of truth:</strong> Zone boundaries defined once in <code style="font-family:var(--font-mono);color:var(--cyan)">utils.py</code> · imported by <code style="font-family:var(--font-mono);color:var(--cyan)">gui_config.py</code> · visual canvas and algorithm always in sync.
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 5 — OBSTACLES
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s5" aria-label="Obstacle map">
+  <div class="grid-bg"></div>
+  <div class="slide-inner">
+    <div class="slide-header">
+      <span class="label reveal d1">04 — Obstacle Map</span>
+      <h2 class="reveal d2">7 Analytic Shapes</h2>
+      <div class="divider reveal d3"></div>
+    </div>
+    <div class="obs-rows">
+      <div class="obs-row" style="font-family:var(--font-mono);font-size:var(--small-size);color:var(--muted);padding:0 0.2em 0.3em;border-bottom:1px solid var(--card-border);flex-shrink:0;">
+        <span>SHAPE</span><span>GEOMETRY</span><span>BOUNDARY METHOD</span>
+      </div>
+      <div class="obs-row reveal d2"><div class="obs-name">Circle</div><div class="obs-desc">Centre (150, 225), radius 25</div><div class="obs-method">dist = r² − (r_obs + c_r)²  ≤ 0</div></div>
+      <div class="obs-row reveal d3"><div class="obs-name">Ellipse</div><div class="obs-desc">Centre (100, 150), semi-axes 20 × 40</div><div class="obs-method">Normalised Euclidean ≤ 0</div></div>
+      <div class="obs-row reveal d4"><div class="obs-name">Triangle 1</div><div class="obs-desc">Vertices ≈ (120,20) (150,50) (185,25)</div><div class="obs-method">Half-plane ∩ — all f ≤ 0</div></div>
+      <div class="obs-row reveal d4"><div class="obs-name">Triangle 2</div><div class="obs-desc">Vertices ≈ (150,50) (185,25) (185,75)</div><div class="obs-method">Half-plane ∩ — all f ≥ 0</div></div>
+      <div class="obs-row reveal d5"><div class="obs-name">Rhombus</div><div class="obs-desc">Centre (25, 225), 4 corners</div><div class="obs-method">4 half-planes — all f ≥ 0</div></div>
+      <div class="obs-row reveal d5"><div class="obs-name">Rectangle</div><div class="obs-desc">Tilted diamond near row 75, col 150</div><div class="obs-method">4 half-planes — all f ≤ 0</div></div>
+      <div class="obs-row reveal d6"><div class="obs-name">Rod</div><div class="obs-desc">Diagonal bar, rows 30–76, cols 30–95</div><div class="obs-method">4 half-planes, mixed signs</div></div>
+    </div>
+    <div class="insight-bar reveal d6" style="flex-shrink:0;">
+      All obstacles inflated analytically by <strong>c_r = clearance + radius</strong> before path validation — exact boundary, zero discretisation error.
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 6 — ARCHITECTURE
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s6" aria-label="Implementation architecture">
+  <div class="grid-bg"></div>
+  <div class="slide-inner">
+    <div class="slide-header">
+      <span class="label reveal d1">05 — Architecture</span>
+      <h2 class="reveal d2">Five-Module Design</h2>
+      <div class="divider reveal d3"></div>
+    </div>
+    <div class="arch-list">
+      <div class="arch-item reveal d2">
+        <div class="arch-file a1">utils.py</div>
+        <div class="arch-desc">
+          <strong>Dijkstra class</strong> — boundary checks, 8-directional search, terrain costs, lazy-deletion heap, CLI video export.
+          Owns <code style="font-family:var(--font-mono);color:var(--teal)">ROAD_ROWS / OFFROAD_ROWS</code> — single source of truth for zone boundaries.
+        </div>
+      </div>
+      <div class="arch-item reveal d3">
+        <div class="arch-file a2">gui_config.py</div>
+        <div class="arch-desc">
+          All visual constants: colors, grid size, slider ranges, defaults. Imports zone boundaries from <code style="font-family:var(--font-mono);color:var(--amber)">utils.py</code>
+          and derives <code style="font-family:var(--font-mono);color:var(--amber)">TERRAIN_ZONES</code> automatically — no duplication risk.
+        </div>
+      </div>
+      <div class="arch-item reveal d4">
+        <div class="arch-file a3">gui_canvas.py</div>
+        <div class="arch-desc">
+          <strong>PathCanvas</strong> (subclass of tk.Canvas) — terrain shading, inflated obstacle scan (60k cells),
+          explored cells per animation frame, final path, start/goal markers.
+        </div>
+      </div>
+      <div class="arch-item reveal d5">
+        <div class="arch-file a4">gui.py</div>
+        <div class="arch-desc">
+          <strong>DijkstraGUI</strong> — wires sliders, buttons, canvas, frame-by-frame animation loop.
+          150 ms debounce on slider redraws. Keyboard shortcuts: Enter/Esc/R. Entry point via <code style="font-family:var(--font-mono)">main()</code>.
+        </div>
+      </div>
+      <div class="arch-item reveal d6">
+        <div class="arch-file a5">dijkstra.py</div>
+        <div class="arch-desc">
+          CLI wrapper — prompts for inputs, validates boundary &amp; obstacle, runs search, exports
+          <code style="font-family:var(--font-mono);color:var(--magenta)">dijkstra_path.avi</code>.
+          All logic guarded by <code style="font-family:var(--font-mono)">if __name__ == "__main__":</code>.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 7 — GUI SCREENSHOTS
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s7" aria-label="GUI demonstration">
+  <div class="grid-bg"></div>
+  <div class="slide-inner">
+    <div class="slide-header">
+      <span class="label reveal d1">06 — GUI Demonstration</span>
+      <h2 class="reveal d2">Interactive Visualizer</h2>
+      <div class="divider reveal d3"></div>
+    </div>
+    <div class="screenshots-wrap">
+      <div class="screenshot-card reveal-left d2">
+        <img src="Screenshot1.png" alt="GUI showing obstacle map and terrain zones" loading="lazy"
+             onerror="this.style.display='none';this.parentElement.querySelector('.screenshot-placeholder').style.display='flex'"/>
+        <div class="screenshot-placeholder" style="display:none;height:200px;align-items:center;justify-content:center;color:var(--muted);font-size:var(--small-size);">Screenshot1.png not found</div>
+        <div class="screenshot-caption">Fig 1 — Obstacle map with terrain cost zones</div>
+      </div>
+      <div class="screenshot-card reveal d4">
+        <img src="Screenshot2.png" alt="GUI showing Dijkstra exploration and optimal path" loading="lazy"
+             onerror="this.style.display='none';this.parentElement.querySelector('.screenshot-placeholder').style.display='flex'"/>
+        <div class="screenshot-placeholder" style="display:none;height:200px;align-items:center;justify-content:center;color:var(--muted);font-size:var(--small-size);">Screenshot2.png not found</div>
+        <div class="screenshot-caption">Fig 2 — Exploration (blue) + optimal path (teal)</div>
+      </div>
+    </div>
+    <div class="controls-grid reveal d5" style="flex-shrink:0;">
+      <div class="ctrl-chip"><span class="ctrl-key">Left-click</span><span class="ctrl-desc">Set Start</span></div>
+      <div class="ctrl-chip"><span class="ctrl-key">Right-click</span><span class="ctrl-desc">Set Goal</span></div>
+      <div class="ctrl-chip"><span class="ctrl-key">RUN / Enter</span><span class="ctrl-desc">Start search</span></div>
+      <div class="ctrl-chip"><span class="ctrl-key">STOP / Esc</span><span class="ctrl-desc">Cancel animation</span></div>
+      <div class="ctrl-chip"><span class="ctrl-key">RESET / R</span><span class="ctrl-desc">Clear all</span></div>
+      <div class="ctrl-chip"><span class="ctrl-key">Sliders</span><span class="ctrl-desc">Radius · Clearance · Speed</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 8 — LIVE DIJKSTRA ANIMATION
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s8" aria-label="Algorithm animation">
+  <div class="grid-bg"></div>
+  <div class="slide-inner" style="align-items:center;">
+    <div class="slide-header" style="align-self:flex-start;width:100%;">
+      <span class="label reveal d1">07 — Algorithm in Action</span>
+      <h2 class="reveal d2">Live Dijkstra Search</h2>
+      <div class="divider reveal d3"></div>
+    </div>
+    <div id="dijkstra-grid-wrap">
+      <canvas id="dijkstra-canvas" width="560" height="320" aria-label="Animated Dijkstra grid"></canvas>
+    </div>
+    <div class="anim-legend reveal d4" style="flex-shrink:0;">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--teal);box-shadow:var(--glow-teal);"></div><span>Start</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--amber);"></div><span>Goal</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:rgba(69,123,157,0.9);"></div><span>Explored</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--teal);"></div><span>Optimal Path</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:rgba(255,51,102,0.8);"></div><span>Obstacle</span></div>
+    </div>
+    <p class="reveal d5" style="text-align:center;color:var(--muted);font-size:var(--small-size);flex-shrink:0;">
+      This mini-grid replays automatically · Click the canvas to restart
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 9 — RESULTS
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s9" aria-label="Results">
+  <div class="grid-bg"></div>
+  <div class="slide-inner">
+    <div class="slide-header">
+      <span class="label reveal d1">08 — Results &amp; Analysis</span>
+      <h2 class="reveal d2">Performance Metrics</h2>
+      <div class="divider reveal d3"></div>
+    </div>
+    <div class="metrics-grid reveal d2">
+      <div class="metric-card c1">
+        <div class="metric-val" data-count="215" data-prefix="~">~215</div>
+        <div class="metric-label">Weighted Distance</div>
+        <div class="metric-unit">terrain-weighted units</div>
+      </div>
+      <div class="metric-card c2">
+        <div class="metric-val">14k–28k</div>
+        <div class="metric-label">Nodes Explored</div>
+        <div class="metric-unit">depends on start/goal</div>
+      </div>
+      <div class="metric-card c3">
+        <div class="metric-val">180–260</div>
+        <div class="metric-label">Path Length</div>
+        <div class="metric-unit">nodes on optimal path</div>
+      </div>
+      <div class="metric-card c4">
+        <div class="metric-val">&lt;3s</div>
+        <div class="metric-label">Runtime</div>
+        <div class="metric-unit">standard laptop, step=1</div>
+      </div>
+    </div>
+    <div class="observations reveal d3">
+      <h3 style="color:var(--cyan);margin-bottom:0.3em;">Key Observations</h3>
+      <div class="obs-item"><span class="obs-icon">◈</span><span>Path bends through <strong style="color:var(--teal)">road bands</strong> even when a straight diagonal across open space looks shorter geometrically</span></div>
+      <div class="obs-item"><span class="obs-icon">◈</span><span>×6.0 off-road zones create visible <strong style="color:var(--white)">detours</strong> — the AV treats them like walls</span></div>
+      <div class="obs-item"><span class="obs-icon">◈</span><span>Step size trades resolution for speed: step=1 → 28k nodes · step=5 → ~3k nodes</span></div>
+      <div class="obs-item"><span class="obs-icon">◈</span><span><code style="font-family:var(--font-mono);color:var(--cyan)">defaultdict</code> cuts memory from 180k pre-allocated entries to O(visited) — instantiation is near-free</span></div>
+      <div class="obs-item"><span class="obs-icon">◈</span><span>150 ms debounce on obstacle redraws eliminates 60k canvas ops per slider tick</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 10 — CONCLUSIONS
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s11" aria-label="Conclusions">
+  <div class="grid-bg"></div>
+  <div class="slide-inner">
+    <div class="slide-header">
+      <span class="label reveal d1">09 — Conclusions</span>
+      <h2 class="reveal d2">What We Proved.</h2>
+      <div class="divider reveal d3"></div>
+    </div>
+    <div class="slide-body" style="align-items:stretch;">
+      <div class="col reveal d2" style="max-width:720px;margin:0 auto;">
+        <div class="card teal-top" style="flex:1;">
+          <h3 style="color:var(--teal);margin-bottom:0.8em;">✓ Conclusions</h3>
+          <ul class="bullet-list">
+            <li>Dijkstra finds the globally optimal terrain-weighted path — f(n) = g(n) guarantees optimality</li>
+            <li>Three-tier terrain model effectively steers the AV onto paved roads</li>
+            <li>7 analytic obstacle shapes with configurable robot radius + clearance</li>
+            <li>Interactive GUI provides real-time exploration &amp; path animation</li>
+            <li>defaultdict + lazy-deletion heap keeps memory and runtime efficient</li>
+            <li>Single source of truth prevents algorithmic / visual drift</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 11 — THANK YOU
+     ═══════════════════════════════════════════════════ -->
+<section class="slide" id="s12" aria-label="Thank you">
+  <div class="grid-bg"></div>
+  <canvas id="end-canvas" style="position:absolute;inset:0;z-index:0;opacity:0.5;" aria-hidden="true"></canvas>
+  <div class="slide-inner" style="justify-content:center;padding-left:clamp(3rem,8vw,9rem);">
+    <div class="s1-eyebrow reveal d1">— End of Presentation</div>
+    <h1 class="reveal d2">Thank<br>You.</h1>
+    <div style="margin-top:1.5em;display:flex;flex-direction:column;gap:0.6em;max-width:38em;" class="reveal d3">
+      <div class="link-card">
+        <span style="color:var(--cyan);font-size:1.2em;">⌂</span>
+        <div>
+          <div class="link-label">GITHUB REPOSITORY</div>
+          <div style="font-size:var(--small-size);color:var(--muted);"><a href="https://github.com/OfirHaf/Autonomic-Vehicle" target="_blank" style="color:var(--cyan);text-decoration:none;">https://github.com/OfirHaf/Autonomic-Vehicle</a></div>
+        </div>
+      </div>
+      <div class="link-card">
+        <span style="color:var(--amber);font-size:1.2em;">▶</span>
+        <div>
+          <div class="link-label">PRESENTATION RECORDING</div>
+          <div style="font-size:var(--small-size);color:var(--muted);">Add your video URL here</div>
+        </div>
+      </div>
+    </div>
+    <div class="s1-meta reveal d4" style="margin-top:1.5em;">
+      <span>Dijkstra's Algorithm</span>
+      <span>Weighted Terrain</span>
+      <span>8-Connected Grid</span>
+      <span>Interactive GUI</span>
+    </div>
+    <div style="margin-top:0.8em;font-family:var(--font-mono);font-size:var(--small-size);color:var(--muted);" class="reveal d5">
+      ENPM 661 — Robot Motion Planning · 2026
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+/* =====================================================
+   PRESENTATION CONTROLLER
+   ===================================================== */
+const slides = document.querySelectorAll('.slide');
+const total  = slides.length;
+let current  = 0;
+let isScrolling = false;
+
+const progressFill = document.getElementById('progress-fill');
+const slideCounter = document.getElementById('slide-counter');
+const dots = document.querySelectorAll('.dot');
+
+function pad(n) { return String(n).padStart(2,'0'); }
+
+function updateUI() {
+  progressFill.style.width = `${(current / (total - 1)) * 100}%`;
+  slideCounter.textContent = `${pad(current + 1)} / ${pad(total)}`; // total auto-counts from DOM
+  dots.forEach((d, i) => d.classList.toggle('active', i === current));
+}
+
+function goTo(idx, smooth = true) {
+  if (idx < 0 || idx >= total) return;
+  current = idx;
+  slides[current].scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  updateUI();
+  triggerReveals(slides[current]);
+  if (current === 7) startDijkstraAnim();
+}
+
+function next() { goTo(current + 1); }
+function prev() { goTo(current - 1); }
+
+/* Keyboard navigation */
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  switch (e.key) {
+    case 'ArrowDown': case 'ArrowRight': case ' ': case 'PageDown': e.preventDefault(); next(); break;
+    case 'ArrowUp':   case 'ArrowLeft':  case 'PageUp':             e.preventDefault(); prev(); break;
+    case 'Home': e.preventDefault(); goTo(0); break;
+    case 'End':  e.preventDefault(); goTo(total - 1); break;
+  }
+});
+
+/* Wheel navigation */
+let wheelTimer = null;
+document.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (wheelTimer) return;
+  if (e.deltaY > 30) next();
+  else if (e.deltaY < -30) prev();
+  wheelTimer = setTimeout(() => { wheelTimer = null; }, 600);
+}, { passive: false });
+
+/* Touch navigation */
+let touchY = 0;
+document.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
+document.addEventListener('touchend', e => {
+  const dy = touchY - e.changedTouches[0].clientY;
+  if (Math.abs(dy) > 50) dy > 0 ? next() : prev();
+}, { passive: true });
+
+/* Nav dots */
+dots.forEach((d, i) => d.addEventListener('click', () => goTo(i)));
+
+/* =====================================================
+   REVEAL ANIMATIONS — IntersectionObserver
+   ===================================================== */
+function triggerReveals(slide) {
+  const els = slide.querySelectorAll('.reveal, .reveal-left, .reveal-scale');
+  els.forEach(el => {
+    setTimeout(() => el.classList.add('visible'),
+      parseFloat(getComputedStyle(el).transitionDelay || '0') * 1000 || 0);
+  });
+}
+
+// Reveal on slide enter via IO as fallback
+const revealObserver = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const slide = entry.target;
+      const idx = Array.from(slides).indexOf(slide);
+      if (idx !== current) { current = idx; updateUI(); }
+      triggerReveals(slide);
+    }
+  });
+}, { threshold: 0.5 });
+
+slides.forEach(s => revealObserver.observe(s));
+
+/* =====================================================
+   PARTICLE CANVAS — Title slide
+   ===================================================== */
+(function() {
+  const canvas = document.getElementById('particle-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let W, H, particles = [], animId;
+
+  function resize() {
+    W = canvas.width  = canvas.offsetWidth;
+    H = canvas.height = canvas.offsetHeight;
+  }
+
+  function Particle() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.4;
+    this.vy = (Math.random() - 0.5) * 0.4;
+    this.r  = Math.random() * 1.5 + 0.5;
+    this.a  = Math.random() * 0.5 + 0.1;
+  }
+
+  function init() {
+    resize();
+    particles = Array.from({ length: 80 }, () => new Particle());
+    loop();
+  }
+
+  function loop() {
+    ctx.clearRect(0, 0, W, H);
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+      if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+
+      // Draw particle
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0,229,255,${p.a})`;
+      ctx.fill();
+
+      // Connect nearby particles
+      for (let j = i + 1; j < particles.length; j++) {
+        const q = particles[j];
+        const dx = p.x - q.x, dy = p.y - q.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 120) {
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(q.x, q.y);
+          ctx.strokeStyle = `rgba(0,229,255,${(1 - dist/120) * 0.12})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+    animId = requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', () => { cancelAnimationFrame(animId); init(); });
+  init();
+})();
+
+/* =====================================================
+   TITLE PATH ANIMATION
+   ===================================================== */
+(function() {
+  const path = document.getElementById('anim-path');
+  if (!path) return;
+  function animatePath() {
+    path.style.transition = 'none';
+    path.style.strokeDashoffset = '600';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        path.style.transition = 'stroke-dashoffset 2s ease-in-out';
+        path.style.strokeDashoffset = '0';
+      });
+    });
+  }
+  animatePath();
+  setInterval(animatePath, 4000);
+})();
+
+/* =====================================================
+   END CANVAS — slide 12 sparkle
+   ===================================================== */
+(function() {
+  const canvas = document.getElementById('end-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let W, H, sparks = [], animId2;
+
+  function resize() {
+    W = canvas.width  = canvas.offsetWidth;
+    H = canvas.height = canvas.offsetHeight;
+  }
+
+  function Spark() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.vy = -Math.random() * 0.6 - 0.1;
+    this.life = 1;
+    this.decay = Math.random() * 0.003 + 0.001;
+    this.color = Math.random() > 0.5 ? '0,229,255' : '6,214,160';
+  }
+
+  function endLoop() {
+    ctx.clearRect(0, 0, W, H);
+    if (sparks.length < 60 && Math.random() > 0.3) sparks.push(new Spark());
+    sparks = sparks.filter(s => {
+      s.x += s.vx; s.y += s.vy; s.life -= s.decay;
+      if (s.life <= 0) return false;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.life * 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${s.color},${s.life * 0.6})`;
+      ctx.fill();
+      return true;
+    });
+    animId2 = requestAnimationFrame(endLoop);
+  }
+
+  resize();
+  window.addEventListener('resize', resize);
+  endLoop();
+})();
+
+/* =====================================================
+   MINI DIJKSTRA ANIMATION — Slide 8
+   ===================================================== */
+let dijkstraAnimRunning = false;
+let dijkstraAnimId = null;
+
+function startDijkstraAnim() {
+  if (dijkstraAnimRunning) return;
+  runDijkstraAnim();
+}
+
+document.getElementById('dijkstra-canvas').addEventListener('click', () => {
+  if (dijkstraAnimId) cancelAnimationFrame(dijkstraAnimId);
+  dijkstraAnimRunning = false;
+  setTimeout(runDijkstraAnim, 100);
+});
+
+function runDijkstraAnim() {
+  dijkstraAnimRunning = true;
+  const canvas = document.getElementById('dijkstra-canvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // Grid parameters
+  const COLS = 28, ROWS = 16;
+  const cellW = W / COLS, cellH = H / ROWS;
+
+  // Obstacle positions (col, row)
+  const obstacles = new Set([
+    '8,4','8,5','8,6','9,5','10,4','10,5','10,6',
+    '14,3','15,3','16,3','14,4','16,4','14,5','15,5','16,5',
+    '20,7','21,7','22,7','20,8','21,8','22,8',
+    '6,10','7,10','8,10','6,11','7,11','8,11',
+    '18,11','19,11','18,12','19,12','18,10','19,10',
+  ]);
+
+  // Terrain zones (road rows)
+  const roadRows = new Set([4, 5, 9, 10, 12, 13]);
+  const offRows  = new Set([0, 1, 7, 8, 14, 15]);
+
+  const start = { c: 1, r: 14 };
+  const goal  = { c: 26, r: 1 };
+
+  const key = (c, r) => `${c},${r}`;
+  const inBounds = (c, r) => c >= 0 && c < COLS && r >= 0 && r < ROWS;
+  const isObs = (c, r) => obstacles.has(key(c, r));
+  const terrainCost = r => roadRows.has(r) ? 1.0 : offRows.has(r) ? 6.0 : 2.5;
+
+  // Run Dijkstra
+  const INF = Infinity;
+  const dist = {};
+  const parent = {};
+  const visited = new Set();
+  const heap = [[0, start.c, start.r]];
+
+  dist[key(start.c, start.r)] = 0;
+
+  // Simple min-heap operations inline
+  function heapPush(h, item) {
+    h.push(item);
+    let i = h.length - 1;
+    while (i > 0) {
+      const p = Math.floor((i - 1) / 2);
+      if (h[p][0] <= h[i][0]) break;
+      [h[p], h[i]] = [h[i], h[p]]; i = p;
+    }
+  }
+  function heapPop(h) {
+    const top = h[0];
+    const last = h.pop();
+    if (h.length > 0) {
+      h[0] = last; let i = 0;
+      while (true) {
+        let smallest = i;
+        const l = 2*i+1, r = 2*i+2;
+        if (l < h.length && h[l][0] < h[smallest][0]) smallest = l;
+        if (r < h.length && h[r][0] < h[smallest][0]) smallest = r;
+        if (smallest === i) break;
+        [h[i], h[smallest]] = [h[smallest], h[i]]; i = smallest;
+      }
+    }
+    return top;
+  }
+
+  const dirs8 = [
+    [0,1,1],[0,-1,1],[1,0,1],[-1,0,1],
+    [1,1,Math.SQRT2],[1,-1,Math.SQRT2],[-1,1,Math.SQRT2],[-1,-1,Math.SQRT2]
+  ];
+
+  const explored = [];
+
+  while (heap.length > 0) {
+    const [cost, c, r] = heapPop(heap);
+    const k = key(c, r);
+    if (visited.has(k)) continue;
+    visited.add(k);
+    explored.push([c, r]);
+    if (c === goal.c && r === goal.r) break;
+    for (const [dc, dr, base] of dirs8) {
+      const nc = c + dc, nr = r + dr;
+      if (!inBounds(nc, nr) || isObs(nc, nr) || visited.has(key(nc, nr))) continue;
+      const edgeCost = base * (terrainCost(r) + terrainCost(nr)) / 2;
+      const newCost = (dist[k] || 0) + edgeCost;
+      const nk = key(nc, nr);
+      if (newCost < (dist[nk] || INF)) {
+        dist[nk] = newCost;
+        parent[nk] = [c, r];
+        heapPush(heap, [newCost, nc, nr]);
+      }
+    }
+  }
+
+  // Backtrack path
+  const path = [];
+  let cur = [goal.c, goal.r];
+  while (cur) {
+    path.push(cur);
+    const k = key(cur[0], cur[1]);
+    cur = parent[k] ? parent[k] : null;
+  }
+  path.reverse();
+
+  // ---- DRAW ----
+  function draw(exploredUpTo, pathUpTo) {
+    ctx.clearRect(0, 0, W, H);
+
+    // Background
+    ctx.fillStyle = '#05152a';
+    ctx.fillRect(0, 0, W, H);
+
+    // Terrain
+    for (let r = 0; r < ROWS; r++) {
+      let color;
+      if (roadRows.has(r)) color = 'rgba(6,214,160,0.1)';
+      else if (offRows.has(r)) color = 'rgba(69,123,157,0.12)';
+      else color = 'transparent';
+      if (color !== 'transparent') {
+        ctx.fillStyle = color;
+        ctx.fillRect(0, r * cellH, W, cellH);
+      }
+    }
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(0,229,255,0.05)';
+    ctx.lineWidth = 0.5;
+    for (let c = 0; c <= COLS; c++) {
+      ctx.beginPath(); ctx.moveTo(c*cellW, 0); ctx.lineTo(c*cellW, H); ctx.stroke();
+    }
+    for (let r = 0; r <= ROWS; r++) {
+      ctx.beginPath(); ctx.moveTo(0, r*cellH); ctx.lineTo(W, r*cellH); ctx.stroke();
+    }
+
+    // Obstacles
+    for (const k of obstacles) {
+      const [c, r] = k.split(',').map(Number);
+      ctx.fillStyle = 'rgba(255,51,102,0.75)';
+      ctx.fillRect(c*cellW+0.5, r*cellH+0.5, cellW-1, cellH-1);
+    }
+
+    // Explored
+    for (let i = 0; i < exploredUpTo; i++) {
+      const [c, r] = explored[i];
+      ctx.fillStyle = 'rgba(69,123,157,0.7)';
+      ctx.fillRect(c*cellW+0.5, r*cellH+0.5, cellW-1, cellH-1);
+    }
+
+    // Path
+    for (let i = 0; i < pathUpTo && i < path.length; i++) {
+      const [c, r] = path[i];
+      ctx.fillStyle = 'rgba(6,214,160,0.9)';
+      ctx.fillRect(c*cellW+0.5, r*cellH+0.5, cellW-1, cellH-1);
+      if (i === pathUpTo - 1 && i < path.length - 1) {
+        // Glow on frontier
+        ctx.fillStyle = 'rgba(6,214,160,0.3)';
+        ctx.fillRect((c-1)*cellW, (r-1)*cellH, cellW*3, cellH*3);
+        ctx.fillStyle = 'rgba(6,214,160,0.9)';
+        ctx.fillRect(c*cellW+0.5, r*cellH+0.5, cellW-1, cellH-1);
+      }
+    }
+
+    // Start marker
+    const sc = start.c, sr = start.r;
+    ctx.fillStyle = '#06d6a0';
+    ctx.fillRect(sc*cellW+0.5, sr*cellH+0.5, cellW-1, cellH-1);
+    ctx.fillStyle = 'rgba(6,214,160,0.3)';
+    ctx.fillRect((sc-1)*cellW, (sr-1)*cellH, cellW*3, cellH*3);
+
+    // Goal marker
+    const gc = goal.c, gr = goal.r;
+    ctx.fillStyle = '#ffd166';
+    ctx.fillRect(gc*cellW+0.5, gr*cellH+0.5, cellW-1, cellH-1);
+  }
+
+  // ---- ANIMATE ----
+  let exploreIdx = 0;
+  let pathIdx = 0;
+  let phase = 'explore'; // 'explore' | 'path' | 'done' | 'pause'
+  let pauseTimer = 0;
+  let lastTime = 0;
+
+  const EXPLORE_SPEED = 3;  // nodes per frame during explore
+  const PATH_SPEED = 1;     // cells per frame during path draw
+
+  function animFrame(ts) {
+    if (!dijkstraAnimRunning) return;
+    if (ts - lastTime < 16) { dijkstraAnimId = requestAnimationFrame(animFrame); return; }
+    lastTime = ts;
+
+    if (phase === 'explore') {
+      exploreIdx = Math.min(exploreIdx + EXPLORE_SPEED, explored.length);
+      draw(exploreIdx, 0);
+      if (exploreIdx >= explored.length) { phase = 'path'; }
+    } else if (phase === 'path') {
+      pathIdx = Math.min(pathIdx + PATH_SPEED, path.length);
+      draw(explored.length, pathIdx);
+      if (pathIdx >= path.length) { phase = 'pause'; pauseTimer = ts; }
+    } else if (phase === 'pause') {
+      if (ts - pauseTimer > 2500) {
+        // Reset
+        exploreIdx = 0; pathIdx = 0; phase = 'explore';
+      }
+    }
+
+    dijkstraAnimId = requestAnimationFrame(animFrame);
+  }
+
+  dijkstraAnimId = requestAnimationFrame(animFrame);
+}
+
+/* =====================================================
+   INIT
+   ===================================================== */
+updateUI();
+triggerReveals(slides[0]);
+</script>
+</body>
+</html>

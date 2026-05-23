@@ -259,11 +259,28 @@ class Dijkstra(object):
             self.visited[current] = True
             explored_states.append(current)
 
-            # Goal reached — Dijkstra guarantees this is the optimal path
-            if current == self.goal:
-                break
-
+            # Goal reached — Dijkstra guarantees this is the optimal path.
+            # When stepSize > 1 the grid is coarse and the exact goal cell may
+            # not be reachable; accept any cell within one step of the goal so
+            # the search always terminates with a path (the backtrack loop still
+            # ends at self.goal via the extra parent pointer set below).
             r, c = current
+            if current == self.goal or (
+                abs(r - self.goal[0]) <= self.stepSize and
+                abs(c - self.goal[1]) <= self.stepSize and
+                self.IsValid(self.goal[0], self.goal[1]) and
+                not self.IsObstacle(self.goal[0], self.goal[1])
+            ):
+                # Bridge from current node to the exact goal cell
+                if current != self.goal:
+                    diag = (r != self.goal[0] and c != self.goal[1])
+                    bridge_cost = self.costToCome[current] + self._edge_cost(
+                        r, self.goal[0], diagonal=diag
+                    )
+                    if bridge_cost < self.costToCome[self.goal]:
+                        self.costToCome[self.goal] = bridge_cost
+                        self.path[self.goal] = current
+                break
 
             # --- Straight moves (cost multiplier = 1.0) ---
             moves_straight = []

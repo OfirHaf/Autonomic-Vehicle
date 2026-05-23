@@ -70,11 +70,7 @@ class DijkstraGUI:
     def _setup_styles(self):
         """Configure ttk widget styles to match the dark theme."""
         style = ttk.Style()
-        style.theme_use('clam')   # 'clam' allows background color overrides
-        style.configure('TScale',
-            background=COLORS['background'],
-            troughcolor=COLORS['slider_trough'],
-        )
+        style.theme_use('clam')
         style.configure('TButton',
             background=COLORS['button_bg'],
             foreground=COLORS['button_fg'],
@@ -216,7 +212,12 @@ class DijkstraGUI:
         self.explored_label.pack(side='left', padx=20)
 
     def _create_slider(self, parent, label_text, var_name, min_val, max_val, default):
-        """Helper: build a label + scale + value-readout row inside `parent`."""
+        """Helper: build a label + scale + value-readout row inside `parent`.
+
+        Uses tk.Scale (not ttk.Scale) with resolution=1 to avoid a Windows
+        bug where ttk.Scale stores raw floats in the Tcl variable behind
+        IntVar, causing corrupted display values and wrong .get() results.
+        """
         frame = tk.Frame(parent, bg=COLORS['background'])
         frame.pack(fill='x', pady=2)
 
@@ -225,21 +226,39 @@ class DijkstraGUI:
             bg=COLORS['background'], width=15, anchor='e'
         ).pack(side='left')
 
-        # Store the IntVar as an attribute so event handlers can read it by name
         var = tk.IntVar(value=default)
         setattr(self, f'{var_name}_var', var)
 
-        ttk.Scale(
+        # StringVar for the value readout — updated in the command callback so
+        # it always shows the post-rounding integer, never a raw float string.
+        display_var = tk.StringVar(value=str(default))
+        setattr(self, f'{var_name}_display', display_var)
+
+        def on_change(raw, n=var_name, v=var, d=display_var):
+            val = max(min_val, min(max_val, int(round(float(raw)))))
+            v.set(val)
+            d.set(str(val))
+            self._on_slider_change(n)
+
+        # tk.Scale with resolution=1 guarantees integer snapping on all platforms.
+        tk.Scale(
             frame,
             from_=min_val, to=max_val,
-            variable=var, orient='horizontal', length=120,
-            command=lambda v, n=var_name: self._on_slider_change(n)
+            variable=var, orient='horizontal', length=130,
+            resolution=1, showvalue=False,
+            command=on_change,
+            bg=COLORS['background'],
+            troughcolor=COLORS['slider_trough'],
+            activebackground=COLORS['button_active'],
+            highlightthickness=0, sliderrelief='flat',
+            bd=0,
         ).pack(side='left', padx=5)
 
-        # Live numeric readout next to the slider
-        tk.Label(frame, textvariable=var,
+        # Fixed-width readout; textvariable=display_var (StringVar) is always a
+        # clean integer string so width=4 will never overflow.
+        tk.Label(frame, textvariable=display_var,
             font=('Helvetica', 10, 'bold'), fg=COLORS['text'],
-            bg=COLORS['background'], width=3
+            bg=COLORS['background'], width=4, anchor='w'
         ).pack(side='left')
 
     # ------------------------------------------------------------------
@@ -261,10 +280,12 @@ class DijkstraGUI:
 
         Without debouncing, every pixel of slider drag triggers a full obstacle
         repaint (O(60 000) canvas operations) — noticeable lag on slower machines.
+        Radius and clearance change the inflated obstacle footprint visually;
+        step_size does not affect rendering so no redraw is needed for it.
         """
         if var_name in ('radius', 'clearance'):
             if self._redraw_id:
-                self.root.after_cancel(self._redraw_id)   # cancel the pending redraw
+                self.root.after_cancel(self._redraw_id)
             self._redraw_id = self.root.after(150, self._full_redraw)
 
     def _full_redraw(self):
